@@ -259,7 +259,7 @@ class Actions(  # pylint: disable=too-many-instance-attributes,too-many-public-m
                     macros['any_path'] = macros['any_path0']
             try:
                 line = self.substitute_macros(cmd.line, additional=macros,
-                                              escape=cmd.escape_macros_for_shell)
+                                              escape=cmd.escape_macros_for_shell, quote_macros=cmd.quote_args)
             except ValueError as ex:
                 if ranger.args.debug:
                     raise
@@ -275,8 +275,8 @@ class Actions(  # pylint: disable=too-many-instance-attributes,too-many-public-m
         return None
 
     def substitute_macros(self, string,  # pylint: disable=redefined-outer-name
-                          additional=None, escape=False):
-        macros = self.get_macros()
+                          additional=None, escape=False, quote_macros=False):
+        macros = self.get_macros(quote_macros=quote_macros)
         if additional:
             macros.update(additional)
         if escape:
@@ -294,43 +294,45 @@ class Actions(  # pylint: disable=too-many-instance-attributes,too-many-public-m
             raise ValueError("Could not apply macros to `%s'" % string)
         return result
 
-    def get_macros(self):  # pylint: disable=too-many-branches,too-many-statements
+    def get_macros(self, quote_macros=False):  # pylint: disable=too-many-branches,too-many-statements
         macros = {}
+
+        wrap = lambda e: '\"' + e + '\"' if quote_macros else e
 
         macros['rangerdir'] = ranger.RANGERDIR
         if not ranger.args.clean:
-            macros['confdir'] = self.fm.confpath()
-            macros['datadir'] = self.fm.datapath()
+            macros['confdir'] = wrap(self.fm.confpath())
+            macros['datadir'] = wrap(self.fm.datapath())
         macros['space'] = ' '
 
         if self.fm.thisfile:
-            macros['f'] = self.fm.thisfile.relative_path
+            macros['f'] = wrap(self.fm.thisfile.relative_path)
         else:
             macros['f'] = MACRO_FAIL
 
         if self.fm.thistab.get_selection:
-            macros['p'] = [os.path.join(self.fm.thisdir.path, fl.relative_path)
+            macros['p'] = [wrap(os.path.join(self.fm.thisdir.path, fl.relative_path))
                            for fl in self.fm.thistab.get_selection()]
-            macros['s'] = [fl.relative_path for fl in self.fm.thistab.get_selection()]
+            macros['s'] = [wrap(fl.relative_path) for fl in self.fm.thistab.get_selection()]
         else:
             macros['p'] = MACRO_FAIL
             macros['s'] = MACRO_FAIL
 
         if self.fm.copy_buffer:
-            macros['c'] = [fl.path for fl in self.fm.copy_buffer]
+            macros['c'] = [wrap(fl.path) for fl in self.fm.copy_buffer]
         else:
             macros['c'] = MACRO_FAIL
 
         if self.fm.thisdir.files:
-            macros['t'] = [fl.relative_path for fl in self.fm.thisdir.files
+            macros['t'] = [wrap(fl.relative_path) for fl in self.fm.thisdir.files
                            if fl.realpath in self.fm.tags or []]
         else:
             macros['t'] = MACRO_FAIL
 
         if self.fm.thisdir:
-            macros['d'] = self.fm.thisdir.path
+            macros['d'] = wrap(self.fm.thisdir.path)
         else:
-            macros['d'] = '.'
+            macros['d'] = wrap('.')
 
         # define d/f/p/s macros for each tab
         for i in range(1, 10):
@@ -342,16 +344,16 @@ class Actions(  # pylint: disable=too-many-instance-attributes,too-many-public-m
             if not tabdir:
                 continue
             i = str(i)
-            macros[i + 'd'] = tabdir.path
+            macros[i + 'd'] = wrap(tabdir.path)
             if tabdir.get_selection():
-                macros[i + 'p'] = [os.path.join(tabdir.path, fl.relative_path)
+                macros[i + 'p'] = [wrap(os.path.join(tabdir.path, fl.relative_path))
                                    for fl in tabdir.get_selection()]
-                macros[i + 's'] = [fl.path for fl in tabdir.get_selection()]
+                macros[i + 's'] = [wrap(fl.path) for fl in tabdir.get_selection()]
             else:
                 macros[i + 'p'] = MACRO_FAIL
                 macros[i + 's'] = MACRO_FAIL
             if tabdir.pointed_obj:
-                macros[i + 'f'] = tabdir.pointed_obj.path
+                macros[i + 'f'] = wrap(tabdir.pointed_obj.path)
             else:
                 macros[i + 'f'] = MACRO_FAIL
 
@@ -372,15 +374,15 @@ class Actions(  # pylint: disable=too-many-instance-attributes,too-many-public-m
         next_tab_dir = next_tab.thisdir
 
         if next_tab_dir:
-            macros['D'] = str(next_tab_dir.path)
+            macros['D'] = wrap(str(next_tab_dir.path))
             if next_tab.thisfile:
-                macros['F'] = next_tab.thisfile.path
+                macros['F'] = wrap(next_tab.thisfile.path)
             else:
                 macros['F'] = MACRO_FAIL
             if next_tab_dir.get_selection():
-                macros['P'] = [os.path.join(next_tab.path, fl.path)
+                macros['P'] = [wrap(os.path.join(next_tab.path, fl.path))
                                for fl in next_tab.get_selection()]
-                macros['S'] = [fl.path for fl in next_tab.get_selection()]
+                macros['S'] = [wrap(fl.path) for fl in next_tab.get_selection()]
             else:
                 macros['P'] = MACRO_FAIL
                 macros['S'] = MACRO_FAIL
@@ -1246,6 +1248,7 @@ class Actions(  # pylint: disable=too-many-instance-attributes,too-many-public-m
             self.signal_emit('tab.change', old=previous_tab, new=self.thistab)
             self.signal_emit('tab.layoutchange')
 
+    tab_open.__quote_args__ = True
     def tab_close(self, name=None):
         if name is None:
             name = self.current_tab
@@ -1294,7 +1297,7 @@ class Actions(  # pylint: disable=too-many-instance-attributes,too-many-public-m
         while i in self.tabs:
             i += 1
         return self.tab_open(i, path)
-
+    tab_new.__quote_args__ = True
     def tab_shift(self, offset=0, to=None):  # pylint: disable=invalid-name
         """Shift the tab left/right
 
@@ -1386,6 +1389,7 @@ class Actions(  # pylint: disable=too-many-instance-attributes,too-many-public-m
         if file_selection:
             self.fm.select_file(file_selection)
 
+    tab_switch.__quote_args__ = True
     def get_tab_list(self):
         assert self.tabs, "There must be at least 1 tab at all times"
 

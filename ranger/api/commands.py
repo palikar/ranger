@@ -20,6 +20,7 @@ __all__ = ['Command', 'LinemodeBase', 'hook_init', 'hook_ready', 'register_linem
 
 _SETTINGS_RE = re.compile(r'^\s*([^\s]+?)=(.*)$')
 _ALIAS_LINE_RE = re.compile(r'(\s+)')
+_ARGS_RE = re.compile(r'\"((?:\\.|[^"\\])+?)\"|(\S+)')
 
 
 def _command_init(cls):
@@ -101,6 +102,8 @@ class Command(FileManagerAware):
     resolve_macros = True
     escape_macros_for_shell = False
     quantifier = None
+    quote_args = False
+
     _shifted = 0
     _setting_line = None
 
@@ -111,7 +114,18 @@ class Command(FileManagerAware):
 
     def init_line(self, line):
         self.line = line
-        self.args = line.split()
+        if not self.quote_args:
+            self.args = line.split()
+        else:
+            self.args = []
+            for arg in _ARGS_RE.finditer(line):
+
+                if arg.group(1) is not None:
+                    self.args.append(arg.group(1))
+
+                    if arg.group(2) is not None:
+                        self.args.append(arg.group(2))
+
         try:
             self.firstpart = line[:line.rindex(' ') + 1]
         except ValueError:
@@ -394,6 +408,7 @@ def command_alias_factory(name, cls, full_command):
 def command_function_factory(func):
     class CommandFunction(Command):
         __doc__ = func.__doc__
+        quote_args = hasattr(func, '__quote_args__') and func.__quote_args__
 
         def execute(self):  # pylint: disable=too-many-branches
             if not func:
