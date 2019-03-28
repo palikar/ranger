@@ -20,7 +20,7 @@ __all__ = ['Command', 'LinemodeBase', 'hook_init', 'hook_ready', 'register_linem
 
 _SETTINGS_RE = re.compile(r'^\s*([^\s]+?)=(.*)$')
 _ALIAS_LINE_RE = re.compile(r'(\s+)')
-_ARGS_RE = re.compile(r'\"((?:\\.|[^"\\])+?)\"|(\S+)')
+_ARGS_RE = re.compile(r'\"((?:\\.|[^"\\])+?)\"|((?:\\.|[^"\\\s])+)')
 
 
 def _command_init(cls):
@@ -118,13 +118,13 @@ class Command(FileManagerAware):
             self.args = line.split()
         else:
             self.args = []
-            for arg in _ARGS_RE.finditer(line):
+            for arg in _ARGS_RE.finditer(line, re.IGNORECASE):
 
                 if arg.group(1) is not None:
                     self.args.append(arg.group(1))
 
-                    if arg.group(2) is not None:
-                        self.args.append(arg.group(2))
+                if arg.group(2) is not None:
+                   self.args.append(arg.group(2))
 
         try:
             self.firstpart = line[:line.rindex(' ') + 1]
@@ -408,7 +408,7 @@ def command_alias_factory(name, cls, full_command):
 def command_function_factory(func):
     class CommandFunction(Command):
         __doc__ = func.__doc__
-        quote_args = hasattr(func, '__quote_args__') and func.__quote_args__
+        quote_args = hasattr(func, '__quote_args__') and func.__quote_args__ is True
 
         def execute(self):  # pylint: disable=too-many-branches
             if not func:
@@ -419,10 +419,26 @@ def command_function_factory(func):
                 except TypeError:
                     return func()
 
+
             args, kwargs = list(), dict()
-            for arg in self.args[1:]:
+
+            index = 1
+            self.fm.notify(self.args)
+            while index < len(self.args):
+                arg = self.args[index]
+                index += 1
+
                 equal_sign = arg.find("=")
-                value = arg if equal_sign == -1 else arg[equal_sign + 1:]
+
+                if equal_sign == -1:
+                    value = arg
+                else:
+                    if self.quote_args and equal_sign == len(arg) - 1:
+                        value = self.args[index]
+                        index = index + 1
+                    else:
+                        value = arg[equal_sign + 1:]
+
                 try:
                     value = int(value)
                 except ValueError:
